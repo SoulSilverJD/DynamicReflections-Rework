@@ -289,6 +289,11 @@ namespace DynamicReflections
                 GMCMHelper.RefreshLocationListing();
             }
 
+            if (modConfig.AreSkyReflectionsEnabled is not false && currentSkySettings is not null && currentSkySettings.AreReflectionsEnabled && Game1.currentLocation.IsOutdoors)
+            {
+                DynamicReflections.skyManager.Generate(Game1.currentLocation);
+            }
+
             // Handle the sky reflections
             var targetDarkTime = Game1.getTrulyDarkTime(Game1.currentLocation) + 100;
             DynamicReflections.shouldDrawNightSky = false;
