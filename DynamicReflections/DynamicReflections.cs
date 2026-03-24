@@ -149,6 +149,7 @@ namespace DynamicReflections
             helper.Events.World.FurnitureListChanged += OnFurnitureListChanged;
             helper.Events.Player.Warped += OnWarped;
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+            helper.Events.GameLoop.TimeChanged += OnTimeChanged;
             helper.Events.GameLoop.DayStarted += OnDayStarted;
             helper.Events.GameLoop.DayEnding += OnDayEnding;
             helper.Events.GameLoop.GameLaunched += OnGameLaunched;
@@ -267,6 +268,25 @@ namespace DynamicReflections
             }
         }
 
+        private void OnTimeChanged(object sender, StardewModdingAPI.Events.TimeChangedEventArgs e)
+        {
+            if (Context.IsWorldReady is false || Game1.currentLocation is null || Game1.currentLocation.Map is null)
+            {
+                return;
+            }
+
+            if (modConfig.AreSkyReflectionsEnabled is false || currentSkySettings is null || currentSkySettings.AreReflectionsEnabled is false || Game1.currentLocation.IsOutdoors is false || Game1.IsRainingHere(Game1.currentLocation))
+            {
+                return;
+            }
+
+            int targetDarkTime = Game1.getTrulyDarkTime(Game1.currentLocation) + 100;
+            if (e.NewTime >= targetDarkTime)
+            {
+                DynamicReflections.skyManager.Generate(Game1.currentLocation);
+            }
+        }
+
         private void OnUpdateTicked(object sender, StardewModdingAPI.Events.UpdateTickedEventArgs e)
         {
             if (Context.IsWorldReady is false || Game1.currentLocation is null)
@@ -287,11 +307,6 @@ namespace DynamicReflections
             if (Game1.activeClickableMenu is null)
             {
                 GMCMHelper.RefreshLocationListing();
-            }
-
-            if (modConfig.AreSkyReflectionsEnabled is not false && currentSkySettings is not null && currentSkySettings.AreReflectionsEnabled && Game1.currentLocation.IsOutdoors)
-            {
-                DynamicReflections.skyManager.Generate(Game1.currentLocation);
             }
 
             // Handle the sky reflections
