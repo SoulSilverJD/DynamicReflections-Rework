@@ -21,16 +21,19 @@ namespace DynamicReflections.Framework.Managers
         internal List<TemporaryAnimatedSprite> skyEffectSprites = new List<TemporaryAnimatedSprite>();
         private Dictionary<GameLocation, bool[,]> _locationToSkyTiles;
         private Dictionary<GameLocation, List<Point>> _locationToSkyPoints;
+        private Dictionary<GameLocation, xTile.Map> _locationToGeneratedMap;
+        private Dictionary<GameLocation, Layer> _locationToGeneratedBackLayer;
 
         public void Reset()
         {
             _locationToSkyTiles = new Dictionary<GameLocation, bool[,]>();
             _locationToSkyPoints = new Dictionary<GameLocation, List<Point>>();
+            _locationToGeneratedMap = new Dictionary<GameLocation, xTile.Map>();
+            _locationToGeneratedBackLayer = new Dictionary<GameLocation, Layer>();
         }
 
         public void Generate(GameLocation location, bool force = false)
         {
-            skyEffectSprites = new List<TemporaryAnimatedSprite>();
             if (location is null || location.Map is null)
             {
                 return;
@@ -40,19 +43,72 @@ namespace DynamicReflections.Framework.Managers
             {
                 Reset();
             }
-            else if (force is false && _locationToSkyTiles.ContainsKey(location) is true && _locationToSkyTiles[location] is not null)
+            else if (force is false && IsGeneratedStateCurrent(location))
             {
                 return;
             }
 
+            skyEffectSprites = new List<TemporaryAnimatedSprite>();
             GeneratePerTile(location);
+        }
+
+        private bool IsGeneratedStateCurrent(GameLocation location)
+        {
+            if (_locationToSkyTiles is null || _locationToSkyPoints is null || _locationToGeneratedMap is null || _locationToGeneratedBackLayer is null)
+            {
+                return false;
+            }
+
+            if (_locationToSkyTiles.TryGetValue(location, out bool[,] skyTiles) is false || skyTiles is null)
+            {
+                return false;
+            }
+
+            if (_locationToSkyPoints.TryGetValue(location, out List<Point> skyPoints) is false || skyPoints is null)
+            {
+                return false;
+            }
+
+            if (_locationToGeneratedMap.TryGetValue(location, out xTile.Map generatedMap) is false || object.ReferenceEquals(generatedMap, location.Map) is false)
+            {
+                return false;
+            }
+
+            if (location.Map.GetLayer("Back") is not Layer currentBackLayer)
+            {
+                return false;
+            }
+
+            if (_locationToGeneratedBackLayer.TryGetValue(location, out Layer generatedBackLayer) is false || object.ReferenceEquals(generatedBackLayer, currentBackLayer) is false)
+            {
+                return false;
+            }
+
+            if (skyTiles.GetLength(0) != currentBackLayer.LayerWidth || skyTiles.GetLength(1) != currentBackLayer.LayerHeight)
+            {
+                return false;
+            }
+
+            if (skyPoints.Count > 0)
+            {
+                Point samplePoint = skyPoints[0];
+                Tile sampleTile = currentBackLayer.Tiles[samplePoint.X, samplePoint.Y];
+                if (sampleTile is null || sampleTile.Properties.ContainsKey("SkyIndex") is false)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void GeneratePerTile(GameLocation location)
         {
             var random = new Random((int)((long)Game1.uniqueIDForThisGame + Game1.stats.DaysPlayed * 500 + Game1.ticks + DateTime.Now.Ticks));
-            if (location.Map.GetLayer("Back") is var backLayer && backLayer is not null)
+            if (location.Map.GetLayer("Back") is Layer backLayer)
             {
+                _locationToGeneratedMap[location] = location.Map;
+                _locationToGeneratedBackLayer[location] = backLayer;
                 _locationToSkyTiles[location] = new bool[backLayer.LayerWidth, backLayer.LayerHeight];
                 _locationToSkyPoints[location] = new List<Point>();
 
