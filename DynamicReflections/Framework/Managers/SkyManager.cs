@@ -39,7 +39,7 @@ namespace DynamicReflections.Framework.Managers
                 return;
             }
 
-            if (_locationToSkyTiles is null)
+            if (_locationToSkyTiles is null || _locationToSkyPoints is null || _locationToGeneratedMap is null || _locationToGeneratedBackLayer is null)
             {
                 Reset();
             }
