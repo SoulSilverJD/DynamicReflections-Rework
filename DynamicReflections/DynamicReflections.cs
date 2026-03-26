@@ -64,6 +64,9 @@ namespace DynamicReflections
         internal static bool isDrawingWaterReflection;
         internal static bool isFilteringWater;
         internal static bool shouldSkipWaterOverlay;
+        internal static bool shouldDeferWaterReflectionPresentation;
+        internal static bool shouldDeferSkyReflectionPresentation;
+        internal static bool isRenderingTopmostBackgroundWaterMask;
 
         // Puddle reflection variables
         internal static bool shouldDrawPuddlesReflection;
@@ -101,6 +104,7 @@ namespace DynamicReflections
         internal static RenderTarget2D mirrorsLayerRenderTarget;
         internal static RenderTarget2D mirrorsFurnitureRenderTarget;
         internal static RenderTarget2D puddlesRenderTarget;
+        internal static RenderTarget2D backgroundWaterMaskRenderTarget;
         internal static RasterizerState rasterizer;
 
         public override void Entry(IModHelper helper)
@@ -167,6 +171,7 @@ namespace DynamicReflections
         private void OnWindowResized(object sender, StardewModdingAPI.Events.WindowResizedEventArgs e)
         {
             LoadRenderers();
+            LayerToolkit.InvalidateCaches();
         }
 
         private void OnButtonPressed(object sender, StardewModdingAPI.Events.ButtonPressedEventArgs e)
@@ -241,7 +246,9 @@ namespace DynamicReflections
 
         private void OnWarped(object sender, StardewModdingAPI.Events.WarpedEventArgs e)
         {
-            SetSkyReflectionSettings();
+            LayerToolkit.InvalidateCaches();
+
+            SetSkyReflectionSettings(e.NewLocation);
             SetPuddleReflectionSettings();
             SetWaterReflectionSettings();
             DetectMirrorsForActiveLocation();
@@ -264,26 +271,8 @@ namespace DynamicReflections
                     DynamicReflections.puddleManager.Generate(e.NewLocation, percentOfDiggableTiles: puddlesPercentage);
                 }
 
-                DynamicReflections.skyManager.Generate(e.NewLocation);
-            }
-        }
-
-        private void OnTimeChanged(object sender, StardewModdingAPI.Events.TimeChangedEventArgs e)
-        {
-            if (Context.IsWorldReady is false || Game1.currentLocation is null || Game1.currentLocation.Map is null)
-            {
-                return;
-            }
-
-            if (modConfig.AreSkyReflectionsEnabled is false || currentSkySettings is null || currentSkySettings.AreReflectionsEnabled is false || Game1.currentLocation.IsOutdoors is false || Game1.IsRainingHere(Game1.currentLocation))
-            {
-                return;
-            }
-
-            int targetDarkTime = Game1.getTrulyDarkTime(Game1.currentLocation) + 100;
-            if (e.NewTime >= targetDarkTime)
-            {
-                DynamicReflections.skyManager.Generate(Game1.currentLocation);
+                bool forceNightSkyRefresh = ShouldDrawNightSkyForLocation(e.NewLocation);
+                DynamicReflections.skyManager.Generate(e.NewLocation, force: forceNightSkyRefresh);
             }
         }
 
@@ -656,6 +645,20 @@ namespace DynamicReflections
             }
         }
 
+        private void OnTimeChanged(object sender, StardewModdingAPI.Events.TimeChangedEventArgs e)
+        {
+            if (Context.IsWorldReady is false || location is null || location.Map is null)
+            {
+                return;
+            }
+
+            SetSkyReflectionSettings(Game1.currentLocation);
+            if (ShouldDrawNightSkyForLocation(Game1.currentLocation) && IsNightSkyRefreshBoundary(Game1.currentLocation, e.NewTime))
+            {
+                DynamicReflections.skyManager.Generate(Game1.currentLocation, force: true);
+            }
+        }
+
         private void OnDayStarted(object sender, StardewModdingAPI.Events.DayStartedEventArgs e)
         {
 
@@ -885,18 +888,51 @@ namespace DynamicReflections
         }
 
 
+        private bool ShouldDrawNightSkyForLocation(GameLocation location)
+        {
+            if (Context.IsWorldReady is false || location is null || currentSkySettings is null)
+            {
+                return false;
+            }
+
+            int targetDarkTime = Game1.getTrulyDarkTime(location) + 100;
+            return modConfig.AreSkyReflectionsEnabled is not false
+                && currentSkySettings.AreReflectionsEnabled
+                && location.IsOutdoors
+                && Game1.IsRainingHere(location) is false
+                && Game1.timeOfDay >= targetDarkTime;
+        }
+
+        private static bool IsNightSkyRefreshBoundary(GameLocation location, int timeOfDay)
+        {
+            if (location is null)
+            {
+                return false;
+            }
+
+            int targetDarkTime = Game1.getTrulyDarkTime(location) + 100;
+            return timeOfDay == targetDarkTime
+                || timeOfDay == targetDarkTime + 100
+                || timeOfDay == targetDarkTime + 200;
+        }
+
         internal void SetSkyReflectionSettings(bool recalculate = false)
+        {
+            SetSkyReflectionSettings(Game1.currentLocation, recalculate);
+        }
+
+        internal void SetSkyReflectionSettings(GameLocation location, bool recalculate = false)
         {
             if (currentSkySettings is null)
             {
                 currentSkySettings = new SkySettings();
             }
 
-            if (Context.IsWorldReady is false || Game1.currentLocation is null || Game1.currentLocation.Map is null)
+            if (Context.IsWorldReady is false || location is null || location.Map is null)
             {
                 return;
             }
-            currentSkySettings.Reset(modConfig.GetCurrentSkySettings(Game1.currentLocation));
+            currentSkySettings.Reset(modConfig.GetCurrentSkySettings(location));
 
             // Check if today should have a meteor shower
             isMeteorShower = false;
@@ -906,7 +942,7 @@ namespace DynamicReflections
             }
 
             // Set the map specific puddle settings
-            var map = Game1.currentLocation.Map;
+            var map = location.Map;
             if (map.Properties.ContainsKey(SkySettings.MapProperty_IsEnabled))
             {
                 currentSkySettings.AreReflectionsEnabled = map.Properties[SkySettings.MapProperty_IsEnabled].ToString().Equals("T", StringComparison.OrdinalIgnoreCase);
@@ -1016,9 +1052,9 @@ namespace DynamicReflections
                 }
             }
 
-            if (recalculate && DynamicReflections.skyManager is not null && Game1.currentLocation is not null && Game1.currentLocation.IsOutdoors is true)
+            if (recalculate && DynamicReflections.skyManager is not null && location is not null && location.IsOutdoors is true)
             {
-                DynamicReflections.skyManager.Generate(Game1.currentLocation, force: true);
+                DynamicReflections.skyManager.Generate(location, force: true);
             }
         }
 
@@ -1393,6 +1429,7 @@ namespace DynamicReflections
             RegenerateRenderer(ref playerWaterReflectionRender, shouldUseScreenDimensions);
             RegenerateRenderer(ref playerPuddleReflectionRender, shouldUseScreenDimensions);
             RegenerateRenderer(ref puddlesRenderTarget, shouldUseScreenDimensions);
+            RegenerateRenderer(ref backgroundWaterMaskRenderTarget, shouldUseScreenDimensions);
 
             RegenerateRenderer(ref mirrorsLayerRenderTarget, shouldUseScreenDimensions);
             RegenerateRenderer(ref mirrorsFurnitureRenderTarget, shouldUseScreenDimensions);
